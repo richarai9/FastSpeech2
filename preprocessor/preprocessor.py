@@ -223,7 +223,7 @@ class Preprocessor:
         window_length = 1024
         # import ipdb
 
-        
+
         windowed_data = np.lib.stride_tricks.sliding_window_view(wav, 256)[::256]
         spectral_tilt = [get_spectral_tilt(window) for window in windowed_data]
         if len(spectral_tilt)-len(energy) == -1:
@@ -232,7 +232,7 @@ class Preprocessor:
             print(len(spectral_tilt), len(energy))
             # ipdb.set_trace()
         spectral_tilt = np.array(spectral_tilt)
- 
+
 
         if self.pitch_phoneme_averaging:
             # perform linear interpolation

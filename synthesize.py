@@ -86,7 +86,7 @@ def preprocess_mandarin(text, preprocess_config):
 
 def synthesize(model, step, configs, vocoder, batchs, control_values):
     preprocess_config, model_config, train_config = configs
-    pitch_control, energy_control, duration_control = control_values
+    pitch_control, energy_control, duration_control, tilt_control = control_values
 
     for batch in batchs:
         batch = to_device(batch, device)
@@ -96,7 +96,8 @@ def synthesize(model, step, configs, vocoder, batchs, control_values):
                 *(batch[2:]),
                 p_control=pitch_control,
                 e_control=energy_control,
-                d_control=duration_control
+                d_control=duration_control,
+                s_control=tilt_control
             )
             synth_samples(
                 batch,
@@ -168,6 +169,12 @@ if __name__ == "__main__":
         default=1.0,
         help="control the speed of the whole utterance, larger value for slower speaking rate",
     )
+    parser.add_argument(
+        "--tilt_control",
+        type=float,
+        default=1.0,
+        help="control the spectral tilt of the whole utterance, larger value for higher tilt",
+    )
     args = parser.parse_args()
 
     # Check source texts
@@ -209,6 +216,6 @@ if __name__ == "__main__":
         text_lens = np.array([len(texts[0])])
         batchs = [(ids, raw_texts, speakers, texts, text_lens, max(text_lens))]
 
-    control_values = args.pitch_control, args.energy_control, args.duration_control
+    control_values = args.pitch_control, args.energy_control, args.duration_control, args.tilt_control
 
     synthesize(model, args.restore_step, configs, vocoder, batchs, control_values)
