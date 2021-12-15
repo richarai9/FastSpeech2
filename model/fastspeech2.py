@@ -52,9 +52,11 @@ class FastSpeech2(nn.Module):
         p_targets=None,
         e_targets=None,
         d_targets=None,
+        s_targets=None,
         p_control=1.0,
         e_control=1.0,
         d_control=1.0,
+        s_control=1.0,
     ):
         src_masks = get_mask_from_lengths(src_lens, max_src_len)
         mel_masks = (
@@ -75,6 +77,7 @@ class FastSpeech2(nn.Module):
             p_predictions,
             e_predictions,
             log_d_predictions,
+            s_predictions, # spectral tilt
             d_rounded,
             mel_lens,
             mel_masks,
@@ -86,9 +89,11 @@ class FastSpeech2(nn.Module):
             p_targets,
             e_targets,
             d_targets,
+            s_targets,
             p_control,
             e_control,
             d_control,
+            s_control,
         )
 
         output, mel_masks = self.decoder(output, mel_masks)
@@ -102,6 +107,7 @@ class FastSpeech2(nn.Module):
             p_predictions,
             e_predictions,
             log_d_predictions,
+            s_predictions,
             d_rounded,
             src_masks,
             mel_masks,
