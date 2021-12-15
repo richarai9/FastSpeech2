@@ -18,6 +18,7 @@ variance_predictor:
 variance_embedding:
   pitch_quantization: "linear" # support 'linear' or 'log', 'log' is allowed only if the pitch values are not normalized during preprocessing
   energy_quantization: "linear" # support 'linear' or 'log', 'log' is allowed only if the energy values are not normalized during preprocessing
+  spectral_tilt_quantization: "linear"
   n_bins: 256
 
 # gst:

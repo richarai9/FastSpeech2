@@ -24,26 +24,37 @@ class VarianceAdaptor(nn.Module):
         self.pitch_predictor = VariancePredictor(model_config)
         self.energy_predictor = VariancePredictor(model_config)
 
+        self.spectral_tilt_predictor = VariancePredictor(model_config)
+
         self.pitch_feature_level = preprocess_config["preprocessing"]["pitch"][
             "feature"
         ]
         self.energy_feature_level = preprocess_config["preprocessing"]["energy"][
             "feature"
         ]
+
+        self.spectral_tilt_level = preprocess_config["preprocessing"]["energy"][
+            "feature"
+        ]
+
         assert self.pitch_feature_level in ["phoneme_level", "frame_level"]
         assert self.energy_feature_level in ["phoneme_level", "frame_level"]
+        assert self.spectral_tilt_level in ["phoneme_level", "frame_level"]
 
         pitch_quantization = model_config["variance_embedding"]["pitch_quantization"]
         energy_quantization = model_config["variance_embedding"]["energy_quantization"]
+        spectral_tilt_quantization = model_config["variance_embedding"]["spectral_tilt_quantization"]
         n_bins = model_config["variance_embedding"]["n_bins"]
         assert pitch_quantization in ["linear", "log"]
         assert energy_quantization in ["linear", "log"]
+        assert spectral_tilt_quantization in ["linear", "log"]
         with open(
             os.path.join(preprocess_config["path"]["preprocessed_path"], "stats.json")
         ) as f:
             stats = json.load(f)
             pitch_min, pitch_max = stats["pitch"][:2]
             energy_min, energy_max = stats["energy"][:2]
+            spectral_tilt_min, spectral_tilt_max = stats['spectral_tilt'][:2]
 
         if pitch_quantization == "log":
             self.pitch_bins = nn.Parameter(
@@ -70,10 +81,28 @@ class VarianceAdaptor(nn.Module):
                 requires_grad=False,
             )
 
+        ####
+        if spectral_tilt_quantization == "log":
+            self.spectral_tilt_bins = nn.Parameter(
+                torch.exp(
+                    torch.linspace(np.log(spectral_tilt_min), np.log(spectral_tilt_max), n_bins - 1)
+                ),
+                requires_grad=False,
+            )
+        else:
+            self.spectral_tilt_bins = nn.Parameter(
+                torch.linspace(spectral_tilt_min, spectral_tilt_max, n_bins - 1),
+                requires_grad=False,
+            )
+        ####
+
         self.pitch_embedding = nn.Embedding(
             n_bins, model_config["transformer"]["encoder_hidden"]
         )
         self.energy_embedding = nn.Embedding(
+            n_bins, model_config["transformer"]["encoder_hidden"]
+        )
+        self.spectral_tilt_embedding = nn.Embedding(
             n_bins, model_config["transformer"]["encoder_hidden"]
         )
 
@@ -99,6 +128,18 @@ class VarianceAdaptor(nn.Module):
             )
         return prediction, embedding
 
+    def get_spectral_tilt_embedding(self, x, target, mask, control):
+        prediction = self.spectral_tilt_predictor(x, mask)
+        if target is not None:
+            embedding = self.spectral_tilt_embedding(torch.bucketize(target, self.spectral_tilt_bins))
+        else:
+            prediction = prediction * control
+            embedding = self.spectral_tilt_embedding(
+                torch.bucketize(prediction, self.spectral_tilt_bins)
+            )
+        return prediction, embedding
+
+
     def forward(
         self,
         x,
@@ -108,11 +149,12 @@ class VarianceAdaptor(nn.Module):
         pitch_target=None,
         energy_target=None,
         duration_target=None,
+        spectral_tilt_target=None,
         p_control=1.0,
         e_control=1.0,
         d_control=1.0,
+        s_control=1.0,
     ):
-
         log_duration_prediction = self.duration_predictor(x, src_mask)
         if self.pitch_feature_level == "phoneme_level":
             pitch_prediction, pitch_embedding = self.get_pitch_embedding(
@@ -124,6 +166,10 @@ class VarianceAdaptor(nn.Module):
                 x, energy_target, src_mask, p_control
             )
             x = x + energy_embedding
+        if self.spectral_tilt_level == "phoneme_level":
+            spectral_tilt_prediction, spectral_tilt_embedding = self.get_spectral_tilt_embedding(
+                x, spectral_tilt_target, src_mask, s_control)
+            x = x + spectral_tilt_embedding
 
         if duration_target is not None:
             x, mel_len = self.length_regulator(x, duration_target, max_len)
@@ -146,12 +192,18 @@ class VarianceAdaptor(nn.Module):
                 x, energy_target, mel_mask, p_control
             )
             x = x + energy_embedding
+        if self.spectral_tilt_level == "frame_level":
+            spectral_tilt_prediction, spectral_tilt_embedding = self.get_spectral_tilt_embedding(
+                x, spectral_tilt_target, mel_mask, s_control
+            )
+            x = x + spectral_tilt_embedding
 
         return (
             x,
             pitch_prediction,
             energy_prediction,
             log_duration_prediction,
+            spectral_tilt_prediction,
             duration_rounded,
             mel_len,
             mel_mask,

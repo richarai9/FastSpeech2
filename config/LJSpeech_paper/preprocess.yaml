@@ -28,3 +28,6 @@ preprocessing:
   energy:
     feature: "frame_level" # support 'phoneme_level' or 'frame_level'
     normalization: False
+  spectral_tilt:
+    feature: "phoneme_level"
+    normalization: True

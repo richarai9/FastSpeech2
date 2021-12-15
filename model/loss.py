@@ -13,6 +13,9 @@ class FastSpeech2Loss(nn.Module):
         self.energy_feature_level = preprocess_config["preprocessing"]["energy"][
             "feature"
         ]
+        self.spectral_tilt_level = preprocess_config["preprocessing"]["energy"][
+            "feature"
+        ]
         self.mse_loss = nn.MSELoss()
         self.mae_loss = nn.L1Loss()
 
@@ -24,6 +27,7 @@ class FastSpeech2Loss(nn.Module):
             pitch_targets,
             energy_targets,
             duration_targets,
+            spectral_tilt_targets,
         ) = inputs[6:]
         (
             mel_predictions,
@@ -31,6 +35,7 @@ class FastSpeech2Loss(nn.Module):
             pitch_predictions,
             energy_predictions,
             log_duration_predictions,
+            spectral_tilt_predictions,
             _,
             src_masks,
             mel_masks,
@@ -46,6 +51,7 @@ class FastSpeech2Loss(nn.Module):
         log_duration_targets.requires_grad = False
         pitch_targets.requires_grad = False
         energy_targets.requires_grad = False
+        spectral_tilt_targets.requires_grad = False
         mel_targets.requires_grad = False
 
         if self.pitch_feature_level == "phoneme_level":
@@ -62,6 +68,13 @@ class FastSpeech2Loss(nn.Module):
             energy_predictions = energy_predictions.masked_select(mel_masks)
             energy_targets = energy_targets.masked_select(mel_masks)
 
+        if self.spectral_tilt_level == "phoneme_level":
+            spectral_tilt_predictions = spectral_tilt_predictions.masked_select(src_masks)
+            spectral_tilt_targets = spectral_tilt_targets.masked_select(src_masks)
+        if self.spectral_tilt_level == "frame_level":
+            spectral_tilt_predictions = spectral_tilt_predictions.masked_select(mel_masks)
+            spectral_tilt_targets = spectral_tilt_targets.masked_select(mel_masks)
+
         log_duration_predictions = log_duration_predictions.masked_select(src_masks)
         log_duration_targets = log_duration_targets.masked_select(src_masks)
 
@@ -77,9 +90,10 @@ class FastSpeech2Loss(nn.Module):
         pitch_loss = self.mse_loss(pitch_predictions, pitch_targets)
         energy_loss = self.mse_loss(energy_predictions, energy_targets)
         duration_loss = self.mse_loss(log_duration_predictions, log_duration_targets)
+        spectral_tilt_loss = self.mse_loss(spectral_tilt_predictions, spectral_tilt_targets)
 
         total_loss = (
-            mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss
+            mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss + spectral_tilt_loss
         )
 
         return (
@@ -89,4 +103,5 @@ class FastSpeech2Loss(nn.Module):
             pitch_loss,
             energy_loss,
             duration_loss,
+            spectral_tilt_loss,
         )
