@@ -116,3 +116,5 @@ output/
 *.npy
 TextGrid/
 hifigan/*.pth.tar
+audio/LJSpeech-1.1.tar.bz2
+audio/

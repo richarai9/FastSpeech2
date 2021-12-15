@@ -59,6 +59,11 @@ class Dataset(Dataset):
             "{}-duration-{}.npy".format(speaker, basename),
         )
         duration = np.load(duration_path)
+        spectral_tilt_path = os.path.join(
+            self.preprocessed_path,
+            "tilt",
+            "{}-spec-{}.npy".format(speaker, basename)
+        )
 
         sample = {
             "id": basename,
@@ -69,6 +74,7 @@ class Dataset(Dataset):
             "pitch": pitch,
             "energy": energy,
             "duration": duration,
+            "spectral_tilt": spectral_tilt
         }
 
         return sample
@@ -98,6 +104,7 @@ class Dataset(Dataset):
         pitches = [data[idx]["pitch"] for idx in idxs]
         energies = [data[idx]["energy"] for idx in idxs]
         durations = [data[idx]["duration"] for idx in idxs]
+        spectral_tilts = [data[idx]["spectral_tilt"] for idx in idxs]
 
         text_lens = np.array([text.shape[0] for text in texts])
         mel_lens = np.array([mel.shape[0] for mel in mels])
@@ -108,6 +115,7 @@ class Dataset(Dataset):
         pitches = pad_1D(pitches)
         energies = pad_1D(energies)
         durations = pad_1D(durations)
+        spectral_tilts = pad_1D(spectral_tilts)
 
         return (
             ids,
@@ -122,6 +130,7 @@ class Dataset(Dataset):
             pitches,
             energies,
             durations,
+            spectral_tilts
         )
 
     def collate_fn(self, data):

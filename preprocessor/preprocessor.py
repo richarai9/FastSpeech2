@@ -39,6 +39,7 @@ class Preprocessor:
 
         self.pitch_normalization = config["preprocessing"]["pitch"]["normalization"]
         self.energy_normalization = config["preprocessing"]["energy"]["normalization"]
+        self.spectral_tilt_normalization = config["preprocessing"]["spectral_tilt"]["normalization"]
 
         self.STFT = Audio.stft.TacotronSTFT(
             config["preprocessing"]["stft"]["filter_length"],
@@ -55,18 +56,24 @@ class Preprocessor:
         os.makedirs((os.path.join(self.out_dir, "pitch")), exist_ok=True)
         os.makedirs((os.path.join(self.out_dir, "energy")), exist_ok=True)
         os.makedirs((os.path.join(self.out_dir, "duration")), exist_ok=True)
+        os.makedirs((os.path.join(self.out_dir, "tilt")), exist_ok=True)
 
         print("Processing Data ...")
         out = list()
         n_frames = 0
         pitch_scaler = StandardScaler()
         energy_scaler = StandardScaler()
+        spectral_tilt_scaler = StandardScaler()
 
         # Compute pitch, energy, duration, and mel-spectrogram
         speakers = {}
-        for i, speaker in enumerate(tqdm(os.listdir(self.in_dir))):
+        print(os.listdir(self.in_dir))
+        for i, speaker in enumerate(os.listdir(self.in_dir)):
+            print(speaker)
+            if not os.path.isdir(os.path.join(self.in_dir, speaker)):
+                continue
             speakers[speaker] = i
-            for wav_name in os.listdir(os.path.join(self.in_dir, speaker)):
+            for wav_name in tqdm(os.listdir(os.path.join(self.in_dir, speaker))):
                 if ".wav" not in wav_name:
                     continue
 
@@ -75,17 +82,20 @@ class Preprocessor:
                     self.out_dir, "TextGrid", speaker, "{}.TextGrid".format(basename)
                 )
                 if os.path.exists(tg_path):
+                    # print(basename, end='\r')
                     ret = self.process_utterance(speaker, basename)
                     if ret is None:
                         continue
                     else:
-                        info, pitch, energy, n = ret
+                        info, pitch, energy, spectral_tilt, n = ret
                     out.append(info)
 
                 if len(pitch) > 0:
                     pitch_scaler.partial_fit(pitch.reshape((-1, 1)))
                 if len(energy) > 0:
                     energy_scaler.partial_fit(energy.reshape((-1, 1)))
+                if len(spectral_tilt) > 0:
+                    spectral_tilt_scaler.partial_fit(spectral_tilt.reshape((-1, 1)))
 
                 n_frames += n
 
@@ -104,14 +114,20 @@ class Preprocessor:
         else:
             energy_mean = 0
             energy_std = 1
-
+        if self.spectral_tilt_normalization:
+            spectral_tilt_mean = spectral_tilt_scaler.mean_[0]
+            spectral_tilt_std  = spectral_tilt_scaler.scale_[0]
+        print("Normalizing")
         pitch_min, pitch_max = self.normalize(
             os.path.join(self.out_dir, "pitch"), pitch_mean, pitch_std
         )
         energy_min, energy_max = self.normalize(
             os.path.join(self.out_dir, "energy"), energy_mean, energy_std
         )
-
+        spectral_tilt_min, spectral_tilt_max = self.normalize(
+            os.path.join(self.out_dir, "tilt"), spectral_tilt_mean, spectral_tilt_std
+        )
+        print("Saving")
         # Save files
         with open(os.path.join(self.out_dir, "speakers.json"), "w") as f:
             f.write(json.dumps(speakers))
@@ -130,6 +146,12 @@ class Preprocessor:
                     float(energy_mean),
                     float(energy_std),
                 ],
+                "spectral_tilt": [
+                    float(spectral_tilt_min),
+                    float(spectral_tilt_max),
+                    float(spectral_tilt_mean),
+                    float(spectral_tilt_std),
+                ]
             }
             f.write(json.dumps(stats))
 
@@ -141,8 +163,9 @@ class Preprocessor:
 
         random.shuffle(out)
         out = [r for r in out if r is not None]
-
+        print("Writing metadata")
         # Write metadata
+        print(out)
         with open(os.path.join(self.out_dir, "train.txt"), "w", encoding="utf-8") as f:
             for m in out[self.val_size :]:
                 f.write(m + "\n")
@@ -186,6 +209,7 @@ class Preprocessor:
         )
         pitch = pw.stonemask(wav.astype(np.float64), pitch, t, self.sampling_rate)
 
+
         pitch = pitch[: sum(duration)]
         if np.sum(pitch != 0) <= 1:
             return None
@@ -194,6 +218,21 @@ class Preprocessor:
         mel_spectrogram, energy = Audio.tools.get_mel_from_wav(wav, self.STFT)
         mel_spectrogram = mel_spectrogram[:, : sum(duration)]
         energy = energy[: sum(duration)]
+
+        # Spectral tilt code here (so I can Ctrl+f for it faster)
+        window_length = 1024
+        # import ipdb
+
+        
+        windowed_data = np.lib.stride_tricks.sliding_window_view(wav, 256)[::256]
+        spectral_tilt = [get_spectral_tilt(window) for window in windowed_data]
+        if len(spectral_tilt)-len(energy) == -1:
+            spectral_tilt.append(get_spectral_tilt(wav[-1025:-1]))
+        if len(spectral_tilt) != len(energy):
+            print(len(spectral_tilt), len(energy))
+            # ipdb.set_trace()
+        spectral_tilt = np.array(spectral_tilt)
+ 
 
         if self.pitch_phoneme_averaging:
             # perform linear interpolation
@@ -243,10 +282,17 @@ class Preprocessor:
             mel_spectrogram.T,
         )
 
+        spectral_tilt_filename = "{}-spec-{}.npy".format(speaker, basename)
+        np.save(
+            os.path.join(self.out_dir, "tilt", spectral_tilt_filename),
+            spectral_tilt.T
+        )
+
         return (
             "|".join([basename, speaker, text, raw_text]),
             self.remove_outlier(pitch),
             self.remove_outlier(energy),
+            self.remove_outlier(spectral_tilt),
             mel_spectrogram.shape[1],
         )
 
@@ -312,3 +358,9 @@ class Preprocessor:
             min_value = min(min_value, min(values))
 
         return min_value, max_value
+
+def get_spectral_tilt(data) -> float:
+    from scipy.signal import welch
+    frequencies, powers = welch(data, fs=22050)
+    log_powers = np.log10(powers)
+    return np.polyfit(frequencies, log_powers, 1)[0]
