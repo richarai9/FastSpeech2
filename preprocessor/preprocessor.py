@@ -36,6 +36,9 @@ class Preprocessor:
         self.energy_phoneme_averaging = (
             config["preprocessing"]["energy"]["feature"] == "phoneme_level"
         )
+        self.spectral_tilt_phoneme_averaging = (
+            config["preprocessing"]["spectral_tilt"]["feature"] == "phoneme_level"
+        )
 
         self.pitch_normalization = config["preprocessing"]["pitch"]["normalization"]
         self.energy_normalization = config["preprocessing"]["energy"]["normalization"]
@@ -223,16 +226,18 @@ class Preprocessor:
         window_length = 1024
         # import ipdb
 
-        
-        windowed_data = np.lib.stride_tricks.sliding_window_view(wav, 256)[::256]
+        padded_wav = librosa.util.pad_center(wav, 1024+len(wav))
+        windowed_data = np.lib.stride_tricks.sliding_window_view(padded_wav, window_length)[::256]
         spectral_tilt = [get_spectral_tilt(window) for window in windowed_data]
-        if len(spectral_tilt)-len(energy) == -1:
-            spectral_tilt.append(get_spectral_tilt(wav[-1025:-1]))
-        if len(spectral_tilt) != len(energy):
-            print(len(spectral_tilt), len(energy))
-            # ipdb.set_trace()
         spectral_tilt = np.array(spectral_tilt)
- 
+        # Fix off-by-one errors
+        if len(spectral_tilt) - len(pitch) == 1:
+            spectral_tilt = spectral_tilt[:-1]
+        # If it's still not right, let you inspect
+        if spectral_tilt.shape != energy.shape:
+            print('\n',len(spectral_tilt), len(energy))
+            ipdb.set_trace()
+  
 
         if self.pitch_phoneme_averaging:
             # perform linear interpolation
@@ -265,6 +270,16 @@ class Preprocessor:
                     energy[i] = 0
                 pos += d
             energy = energy[: len(duration)]
+
+        if self.spectral_tilt_phoneme_averaging:
+            pos = 0
+            for i, d in enumerate(duration):
+                if d > 0:
+                    spectral_tilt[i] = np.mean(spectral_tilt[pos : pos + d])
+                else:
+                    spectral_tilt[i] = 0
+                pos += d
+            spectral_tilt = spectral_tilt[: len(duration)]
 
         # Save files
         dur_filename = "{}-duration-{}.npy".format(speaker, basename)
