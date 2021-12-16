@@ -16,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def to_device(data, device):
-    if len(data) == 12:
+    if len(data) == 13:
         (
             ids,
             raw_texts,
@@ -30,6 +30,7 @@ def to_device(data, device):
             pitches,
             energies,
             durations,
+            spectral_tilts
         ) = data
 
         speakers = torch.from_numpy(speakers).long().to(device)
@@ -40,6 +41,7 @@ def to_device(data, device):
         pitches = torch.from_numpy(pitches).float().to(device)
         energies = torch.from_numpy(energies).to(device)
         durations = torch.from_numpy(durations).long().to(device)
+        spectral_tilts = torch.from_numpy(spectral_tilts).float().to(device)
 
         return (
             ids,
@@ -54,6 +56,7 @@ def to_device(data, device):
             pitches,
             energies,
             durations,
+            spectral_tilts
         )
 
     if len(data) == 6:
@@ -109,8 +112,10 @@ def expand(values, durations):
 def synth_one_sample(targets, predictions, vocoder, model_config, preprocess_config):
 
     basename = targets[0][0]
-    src_len = predictions[8][0].item()
-    mel_len = predictions[9][0].item()
+    # Incrementing this because spectral tilt happens at index 5
+    src_len = predictions[9][0].item()
+    mel_len = predictions[10][0].item()
+    
     mel_target = targets[6][0, :mel_len].detach().transpose(0, 1)
     mel_prediction = predictions[1][0, :mel_len].detach().transpose(0, 1)
     duration = targets[11][0, :src_len].detach().cpu().numpy()
@@ -124,6 +129,9 @@ def synth_one_sample(targets, predictions, vocoder, model_config, preprocess_con
         energy = expand(energy, duration)
     else:
         energy = targets[10][0, :mel_len].detach().cpu().numpy()
+    if preprocess_config["preprocessing"]["spectral_tilt"]["feature"] == "phoneme_level":
+        spectral_tilt = targets[11][:, :src_len].detach().cpu().numpy()
+        spectral_tilt = expand(spectral_tilt, duration)
 
     with open(
         os.path.join(preprocess_config["path"]["preprocessed_path"], "stats.json")
@@ -200,7 +208,8 @@ def synth_samples(targets, predictions, vocoder, model_config, preprocess_config
     from .model import vocoder_infer
 
     mel_predictions = predictions[1].transpose(1, 2)
-    lengths = predictions[9] * preprocess_config["preprocessing"]["stft"]["hop_length"]
+    # Incrementing this because spectral tilt happens at index 5
+    lengths = predictions[10] * preprocess_config["preprocessing"]["stft"]["hop_length"]
     wav_predictions = vocoder_infer(
         mel_predictions, vocoder, model_config, preprocess_config, lengths=lengths
     )
