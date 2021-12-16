@@ -236,7 +236,7 @@ class Preprocessor:
         # If it's still not right, let you inspect
         if spectral_tilt.shape != energy.shape:
             print('\n',len(spectral_tilt), len(energy))
-            ipdb.set_trace()
+            # ipdb.set_trace()
   
 
         if self.pitch_phoneme_averaging:
