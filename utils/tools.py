@@ -174,8 +174,8 @@ def synth_samples(targets, predictions, vocoder, model_config, preprocess_config
     basenames = targets[0]
     for i in range(len(predictions[0])):
         basename = basenames[i]
-        src_len = predictions[8][i].item()
-        mel_len = predictions[9][i].item()
+        src_len = predictions[9][i].item()
+        mel_len = predictions[10][i].item()
         mel_prediction = predictions[1][i, :mel_len].detach().transpose(0, 1)
         duration = predictions[5][i, :src_len].detach().cpu().numpy()
         if preprocess_config["preprocessing"]["pitch"]["feature"] == "phoneme_level":
